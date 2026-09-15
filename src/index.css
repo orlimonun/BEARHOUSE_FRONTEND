@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+    --color-bear-black: #0d0d0d;
+    --color-bear-dark: #1a1512;
+    --color-bear-gold: #f4b731;
+    --color-bear-amber: #d9891f;
+    --color-bear-pink: #e91e63;
+    --color-bear-red: #c1272d;
+}
+
+@keyframes scroll-up {
+    from { transform: translateY(0); }
+    to { transform: translateY(-50%); }
+}
+
+@keyframes scroll-down {
+    from { transform: translateY(-50%); }
+    to { transform: translateY(0); }
+}
