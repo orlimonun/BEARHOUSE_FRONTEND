@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { listarOrdenes, crearOrden, pagarOrden, cancelarOrden } from '../api/ordenesApi';
+import { listarOrdenes, crearOrden, cancelarOrden } from '../api/ordenesApi';
 import { listarPlatillos } from '../api/platillosApi';
 import { listarMesas } from '../api/mesasApi';
 import OrdenForm from '../components/OrdenForm';
+import CobroModal from '../components/CobroModal';
 
 function OrdenesPage() {
     const [ordenes, setOrdenes] = useState([]);
@@ -12,6 +13,7 @@ function OrdenesPage() {
     const [error, setError] = useState('');
     const [mostrarForm, setMostrarForm] = useState(false);
     const [expandida, setExpandida] = useState(null);
+    const [cobrando, setCobrando] = useState(null);
 
     useEffect(() => {
         let cancelado = false;
@@ -40,26 +42,16 @@ function OrdenesPage() {
         return () => { cancelado = true; };
     }, []);
 
-    const refrescar = async () => setOrdenes(await listarOrdenes());
+    const refrescar = async () => {
+        const datos = await listarOrdenes();
+        setOrdenes(datos);
+        return datos;
+    };
 
     const handleGuardar = async (datos) => {
         await crearOrden(datos);
         await refrescar();
         setMostrarForm(false);
-    };
-
-    const handlePagar = async (orden) => {
-        const metodo = orden.metodoPago || window.prompt(
-            'Método de pago (EFECTIVO, TARJETA, SINPE, OTRO):', 'EFECTIVO'
-        );
-        if (metodo === null) return;
-        try {
-            await pagarOrden(orden.id, metodo ? metodo.toUpperCase() : null);
-            await refrescar();
-        } catch (err) {
-            alert('No se pudo marcar como pagada');
-            console.error(err);
-        }
     };
 
     const handleCancelar = async (orden) => {
@@ -70,8 +62,19 @@ function OrdenesPage() {
             await cancelarOrden(orden.id);
             await refrescar();
         } catch (err) {
-            alert('No se pudo cancelar la orden');
+            alert(err.response?.data?.message || 'No se pudo cancelar la orden');
             console.error(err);
+        }
+    };
+
+    // Tras cobrar: refresca la lista y actualiza el modal con la orden al día
+    const handlePagado = async () => {
+        const datos = await refrescar();
+        const actualizada = datos.find((o) => o.id === cobrando.id);
+        if (actualizada && actualizada.saldoPendiente > 0) {
+            setCobrando(actualizada);
+        } else {
+            setCobrando(null);
         }
     };
 
@@ -88,7 +91,13 @@ function OrdenesPage() {
     const colorEstado = (estado) => {
         if (estado === 'PAGADA') return 'text-green-400';
         if (estado === 'CANCELADA') return 'text-bear-red';
+        if (estado === 'PARCIALMENTE_PAGADA') return 'text-amber-400';
         return 'text-bear-gold';
+    };
+
+    const etiquetaEstado = (estado) => {
+        if (estado === 'PARCIALMENTE_PAGADA') return 'PARCIAL';
+        return estado;
     };
 
     const etiquetaTipo = (tipo) => {
@@ -96,6 +105,9 @@ function OrdenesPage() {
         if (tipo === 'EXPRESS') return 'Express';
         return 'Local';
     };
+
+    const sePuedeCobrar = (orden) =>
+        orden.estado === 'ABIERTA' || orden.estado === 'PARCIALMENTE_PAGADA';
 
     if (cargando) return <p className="text-neutral-400">Cargando órdenes...</p>;
     if (error) return <p className="text-bear-red">{error}</p>;
@@ -130,6 +142,7 @@ function OrdenesPage() {
                         <th className="px-4 py-3">Tipo</th>
                         <th className="px-4 py-3">Estado</th>
                         <th className="px-4 py-3">Total</th>
+                        <th className="px-4 py-3">Saldo</th>
                         <th className="px-4 py-3 text-right">Acciones</th>
                     </tr>
                     </thead>
@@ -147,9 +160,18 @@ function OrdenesPage() {
                                     )}
                                 </td>
                                 <td className={`px-4 py-3 font-semibold ${colorEstado(orden.estado)}`}>
-                                    {orden.estado}
+                                    {etiquetaEstado(orden.estado)}
                                 </td>
                                 <td className="px-4 py-3 font-semibold">{formatearMonto(orden.total)}</td>
+                                <td className="px-4 py-3">
+                                    {Number(orden.saldoPendiente) > 0 ? (
+                                        <span className="text-amber-400 font-semibold">
+                        {formatearMonto(orden.saldoPendiente)}
+                      </span>
+                                    ) : (
+                                        <span className="text-neutral-500">—</span>
+                                    )}
+                                </td>
                                 <td className="px-4 py-3 text-right whitespace-nowrap">
                                     <button
                                         onClick={() => setExpandida(expandida === orden.id ? null : orden.id)}
@@ -157,13 +179,13 @@ function OrdenesPage() {
                                     >
                                         {expandida === orden.id ? 'Ocultar' : 'Ver'}
                                     </button>
-                                    {orden.estado === 'ABIERTA' && (
-                                        <button onClick={() => handlePagar(orden)}
+                                    {sePuedeCobrar(orden) && (
+                                        <button onClick={() => setCobrando(orden)}
                                                 className="text-green-400 hover:underline mr-4">
-                                            Pagar
+                                            Cobrar
                                         </button>
                                     )}
-                                    {orden.estado !== 'CANCELADA' && (
+                                    {orden.estado === 'ABIERTA' && (
                                         <button onClick={() => handleCancelar(orden)}
                                                 className="text-bear-red hover:underline">
                                             Cancelar
@@ -174,12 +196,13 @@ function OrdenesPage() {
 
                             {expandida === orden.id && (
                                 <tr key={`${orden.id}-detalle`} className="bg-black/30">
-                                    <td colSpan={6} className="px-8 py-4">
+                                    <td colSpan={7} className="px-8 py-4">
                                         <table className="w-full text-sm mb-4">
                                             <thead>
                                             <tr className="text-bear-gold/70">
                                                 <th className="text-left py-2">Platillo</th>
                                                 <th className="text-left py-2">Cantidad</th>
+                                                <th className="text-left py-2">Pagados</th>
                                                 <th className="text-left py-2">Precio unit.</th>
                                                 <th className="text-left py-2">Subtotal</th>
                                             </tr>
@@ -189,6 +212,13 @@ function OrdenesPage() {
                                                 <tr key={d.id} className="text-neutral-300">
                                                     <td className="py-1">{d.platilloNombre}</td>
                                                     <td className="py-1">{d.cantidad}</td>
+                                                    <td className="py-1">
+                                                        {d.cantidadPagada === d.cantidad ? (
+                                                            <span className="text-green-400">{d.cantidadPagada} / {d.cantidad}</span>
+                                                        ) : (
+                                                            <span className="text-amber-400">{d.cantidadPagada} / {d.cantidad}</span>
+                                                        )}
+                                                    </td>
                                                     <td className="py-1">{formatearMonto(d.precioUnitario)}</td>
                                                     <td className="py-1">{formatearMonto(d.subtotal)}</td>
                                                 </tr>
@@ -204,7 +234,20 @@ function OrdenesPage() {
                                                     {formatearMonto(orden.transporte)}
                                                 </div>
                                             )}
-                                            {orden.metodoPago && <div>Método de pago: {orden.metodoPago}</div>}
+                                            <div>Pagado: {formatearMonto(orden.montoPagado)}</div>
+                                            {Number(orden.saldoPendiente) > 0 && (
+                                                <div className="text-amber-400">
+                                                    Pendiente: {formatearMonto(orden.saldoPendiente)}
+                                                </div>
+                                            )}
+                                            {orden.pagosPorMetodo?.length > 0 && (
+                                                <div>
+                                                    Cobrado por método:{' '}
+                                                    {orden.pagosPorMetodo
+                                                        .map((p) => `${p.metodoPago} ${formatearMonto(p.monto)}`)
+                                                        .join(' · ')}
+                                                </div>
+                                            )}
                                             {orden.observaciones && <div>Observaciones: {orden.observaciones}</div>}
                                         </div>
                                     </td>
@@ -218,6 +261,14 @@ function OrdenesPage() {
 
             {ordenes.length === 0 && (
                 <p className="text-neutral-400 mt-4">No hay órdenes registradas todavía.</p>
+            )}
+
+            {cobrando && (
+                <CobroModal
+                    orden={cobrando}
+                    onCerrar={() => setCobrando(null)}
+                    onPagado={handlePagado}
+                />
             )}
         </div>
     );
