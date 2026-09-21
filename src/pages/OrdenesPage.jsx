@@ -3,7 +3,7 @@ import { listarOrdenes, crearOrden, cancelarOrden } from '../api/ordenesApi';
 import { listarPlatillos } from '../api/platillosApi';
 import { listarMesas } from '../api/mesasApi';
 import OrdenForm from '../components/OrdenForm';
-import CobroModal from '../components/CobroModal';
+import CobroModal from '../components/CobroModal.jsx';
 
 function OrdenesPage() {
     const [ordenes, setOrdenes] = useState([]);
